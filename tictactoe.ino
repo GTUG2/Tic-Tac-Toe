@@ -33,11 +33,23 @@
 #define CURSOR_HEIGHT 3
 #define DEBOUNCE_DELAY 100
 
+struct packet{
+  uint8_t start;
+  uint8_t app_id;
+  union{
+    struct{
+      uint8_t cell_states[9];
+      uint8_t increase;
+      uint8_t position;
+    }xox;
+    uint8_t stub[30];
+  }data;
+};
+
 Adafruit_SSD1306 display;  // Create displayw
 SoftwareSerial BTserial(8, 9); // RX | TX
 
 const long baudRate = 9600; 
-char c[2];
 char curr_cursor_x=0;
 char curr_cursor_y=0;
 char curr_player=1;
@@ -64,6 +76,7 @@ unsigned long last_debounce_m = 0;
 unsigned long last_debounce_l = 0;
 unsigned long last_debounce_r = 0;
 
+struct packet test_pkt;
 
 char tic_tac_state[3][3]={
   {0,0,0},
@@ -71,6 +84,13 @@ char tic_tac_state[3][3]={
   {0,0,0}
 };
 
+void send_package(struct packet pkt){
+  uint8_t i, *p = (uint8_t *)&pkt;
+  for(i=0;i<sizeof(pkt);++i){
+    BTserial.write(*p);
+    ++p;
+  }
+}
 
 void drawX(uint8_t x, uint8_t y){
   display.drawLine(first_x + x * JUMP_X, first_y + y * JUMP_Y, first_x + X_WIDTH + x * JUMP_X , first_y + X_HEIGHT + y * JUMP_Y, WHITE);
@@ -104,7 +124,7 @@ void drawTicTacBoard(){
 void setup() 
 {
   Serial.begin(9600);    
-  //BTserial.begin(baudRate);  
+  BTserial.begin(baudRate);  
   
   delay(100);  // This delay is needed to let the display to initialize
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);  // Initialize display with the I2C address of 0x3C 
@@ -120,34 +140,13 @@ void setup()
   pinMode(B_D, INPUT_PULLUP); 
   pinMode(B_M, INPUT_PULLUP); 
   pinMode(B_L, INPUT_PULLUP);
-  pinMode(B_R, INPUT_PULLUP); 
-
-  /*drawO(0,0);
-  drawO(0,1);
-  drawX(0,2);
-
-  drawO(1,0);
-  drawX(1,1);
-  drawO(1,2);
-
-  drawX(2,0);
-  drawO(2,1);
-  drawO(2,2);*/
-  /*drawCursor(0,0);
-  drawCursor(0,1);
-  drawCursor(0,2);
-  drawCursor(1,0);
-  drawCursor(1,1);
-  drawCursor(1,2);
-  drawCursor(2,0);
-  drawCursor(2,1);
-  drawCursor(2,2);*/
-
-  //display.display();
+  pinMode(B_R, INPUT_PULLUP);
 }
  
 void loop()
 {
+  char i;
+  
   display.clearDisplay();  // Clear the display so we can refresh   
   
   u_state = digitalRead(B_U);
@@ -155,17 +154,38 @@ void loop()
   m_state = digitalRead(B_M);
   l_state = digitalRead(B_L);
   r_state = digitalRead(B_R);
+  
 
   if( (millis() - last_debounce_u) > DEBOUNCE_DELAY) {
     if (( u_state == LOW)) {
       if(u_pressed == LOW){
-        Serial.println(F("Up Button Pressed!"));
         if(curr_cursor_y>0){
           curr_cursor_y--;
         }else{
           curr_cursor_y = 2;
         }
         u_pressed = HIGH;
+        memset(&test_pkt, 0, sizeof(test_pkt));
+        test_pkt.start = 127;
+        test_pkt.app_id = 1;
+        for(i=0;i<9;++i){
+          switch (tic_tac_state[i%3][i/3]){
+            case 0:
+              test_pkt.data.xox.cell_states[i] = ' ';
+              break;
+            case 1:
+              test_pkt.data.xox.cell_states[i] = 'X';
+              break;
+            case 2:
+              test_pkt.data.xox.cell_states[i] = 'O';
+              break;                          
+            default:
+              break;
+          }
+        }
+        test_pkt.data.xox.position = curr_cursor_x + curr_cursor_y * 3;
+        
+        send_package(test_pkt);
       }
       last_debounce_u = millis(); //set the current time
     }else{
@@ -175,13 +195,33 @@ void loop()
   if( (millis() - last_debounce_d) > DEBOUNCE_DELAY) {
     if (( d_state == LOW)) {
       if(d_pressed == LOW){
-        Serial.println(F("Down Button Pressed!"));
         if(curr_cursor_y < 2){
           curr_cursor_y++;
         }else{
           curr_cursor_y = 0;
         }
         d_pressed = HIGH;
+        memset(&test_pkt, 0, sizeof(test_pkt));
+        test_pkt.start = 127;
+        test_pkt.app_id = 1;
+        for(i=0;i<9;++i){
+          switch (tic_tac_state[i%3][i/3]){
+            case 0:
+              test_pkt.data.xox.cell_states[i] = ' ';
+              break;
+            case 1:
+              test_pkt.data.xox.cell_states[i] = 'X';
+              break;
+            case 2:
+              test_pkt.data.xox.cell_states[i] = 'O';
+              break;                          
+            default:
+              break;
+          }
+        }
+        test_pkt.data.xox.position = curr_cursor_x + curr_cursor_y * 3;
+        
+        send_package(test_pkt);
       }
       last_debounce_d = millis(); //set the current time
     }else{
@@ -191,11 +231,32 @@ void loop()
   if( (millis() - last_debounce_m) > DEBOUNCE_DELAY) {
     if (( m_state == LOW)) {
       if(m_pressed == LOW){
-        Serial.println(F("Mid Button Pressed!"));
         if(tic_tac_state[curr_cursor_x][curr_cursor_y] == 0){
           tic_tac_state[curr_cursor_x][curr_cursor_y] = curr_player;
           curr_player = 3 - curr_player;
         }
+                
+        memset(&test_pkt, 0, sizeof(test_pkt));
+        test_pkt.start = 127;
+        test_pkt.app_id = 1;
+        for(i=0;i<9;++i){
+          switch (tic_tac_state[i%3][i/3]){
+            case 0:
+              test_pkt.data.xox.cell_states[i] = ' ';
+              break;
+            case 1:
+              test_pkt.data.xox.cell_states[i] = 'X';
+              break;
+            case 2:
+              test_pkt.data.xox.cell_states[i] = 'O';
+              break;                          
+            default:
+              break;
+          }
+        }
+        test_pkt.data.xox.position = curr_cursor_x + curr_cursor_y * 3;
+        
+        send_package(test_pkt);
         m_pressed = HIGH;
       }
       last_debounce_m = millis(); //set the current time
@@ -206,13 +267,33 @@ void loop()
   if( (millis() - last_debounce_l) > DEBOUNCE_DELAY) {
     if (( l_state == LOW)) {
       if(l_pressed == LOW){
-        Serial.println(F("Left Button Pressed!"));
         if(curr_cursor_x > 0){
           curr_cursor_x--;
         }else{
           curr_cursor_x = 2;
         }
         l_pressed = HIGH;
+        memset(&test_pkt, 0, sizeof(test_pkt));
+        test_pkt.start = 127;
+        test_pkt.app_id = 1;
+        for(i=0;i<9;++i){
+          switch (tic_tac_state[i%3][i/3]){
+            case 0:
+              test_pkt.data.xox.cell_states[i] = ' ';
+              break;
+            case 1:
+              test_pkt.data.xox.cell_states[i] = 'X';
+              break;
+            case 2:
+              test_pkt.data.xox.cell_states[i] = 'O';
+              break;                          
+            default:
+              break;
+          }
+        }
+        test_pkt.data.xox.position = curr_cursor_x + curr_cursor_y * 3;
+        
+        send_package(test_pkt);
       }
       last_debounce_l = millis(); //set the current time
     }else{
@@ -222,13 +303,33 @@ void loop()
   if( (millis() - last_debounce_r) > DEBOUNCE_DELAY) {
     if (( r_state == LOW)) {
       if(r_pressed == LOW){
-        Serial.println(F("Right Button Pressed!"));
         if(curr_cursor_x < 2){
           curr_cursor_x++;
         }else{
           curr_cursor_x = 0;
         }
         r_pressed = HIGH;
+        memset(&test_pkt, 0, sizeof(test_pkt));
+        test_pkt.start = 127;
+        test_pkt.app_id = 1;
+        for(i=0;i<9;++i){
+          switch (tic_tac_state[i%3][i/3]){
+            case 0:
+              test_pkt.data.xox.cell_states[i] = ' ';
+              break;
+            case 1:
+              test_pkt.data.xox.cell_states[i] = 'X';
+              break;
+            case 2:
+              test_pkt.data.xox.cell_states[i] = 'O';
+              break;                          
+            default:
+              break;
+          }
+        }
+        test_pkt.data.xox.position = curr_cursor_x + curr_cursor_y * 3;
+        
+        send_package(test_pkt);
       }
       last_debounce_r = millis(); //set the current time
     }else{
@@ -241,60 +342,4 @@ void loop()
   
   
   display.display();
-
-
-
-
-
-  
-  /*if(u_state==LOW){
-    Serial.println(F("Up Button Pressed!"));
-  }
-  if(d_state==LOW){
-    Serial.println(F("Down Button Pressed!"));
-  }
-  if(m_state==LOW){
-    Serial.println(F("Mid Button Pressed!"));
-  }
-  if(l_state==LOW){
-    Serial.println(F("Left Button Pressed!"));
-  }
-  if(r_state==LOW){
-    Serial.println(F("Right Button Pressed!"));
-  } 
-  delay(50);*/
-   
- /*
-  // Read from the Bluetooth module and send to the Arduino Serial Monitor
-  if (BTserial.available())
-  {
-      c = BTserial.read();
-      if(c=='q'){
-        curr_cursor_x=0;
-        curr_cursor_y=0;
-        display.clearDisplay();  // Clear the display so we can refresh    
-        display.drawBitmap(0, 0, xox_board, 128, 64, WHITE);
-        display.display();
-      }else{
-        if(char_count!=1){
-          prev_char = c; 
-        }
-        char_count++;
-        if(char_count==2){
-          curr_player=1-curr_player;
-          if(curr_player==0){
-            display.drawCircle(first_x+(prev_char-'a')*19,first_y+(c-'0')*19,5,WHITE);
-          }else{
-            display.drawLine(first_x-7+(prev_char-'a')*19,first_y+7+(c-'0')*19,first_x+7+(prev_char-'a')*19,first_y-7+(c-'0')*19,WHITE);
-            display.drawLine(first_x-7+(prev_char-'a')*19,first_y-7+(c-'0')*19,first_x+7+(prev_char-'a')*19,first_y+7+(c-'0')*19,WHITE);
-          }
-          char_count=0;
-          display.display();
-        }
-      }
-      Serial.write(c);
-  }
-
-*/
-
 }
